@@ -15,7 +15,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 const upload = multer({ dest: 'uploads/' });
 
-// قاموس الترجمة الموسّع
 const translationDictionary = {
   'malware': 'برمجية خبيثة (Malware)',
   'trojan': 'حصان طروادة (Trojan)',
@@ -46,6 +45,19 @@ function translateTerm(term) {
   return translationDictionary[lower] || term;
 }
 
+function isHarmful(term) {
+  const harmfulTerms = ['malicious', 'phishing', 'malware', 'trojan', 'spyware', 'backdoor', 'worm', 'ransomware'];
+  return harmfulTerms.includes(term.toLowerCase());
+}
+
+function sortResults(entries) {
+  return entries.sort((a, b) => {
+    const harmfulA = isHarmful(a.result || '');
+    const harmfulB = isHarmful(b.result || '');
+    return harmfulA === harmfulB ? 0 : harmfulB - harmfulA;
+  });
+}
+
 app.post('/scan-url', async (req, res) => {
   const { url } = req.body;
   try {
@@ -60,7 +72,7 @@ app.post('/scan-url', async (req, res) => {
 
     const submitData = await submitResponse.json();
     const id = submitData.data?.id;
-    if (!id) return res.json({ error: "فشل إرسال الرابط للتحليل. تحقق من صحة الرابط." });
+    if (!id) return res.json({ error: "فشل إرسال الرابط للتحليل." });
 
     await new Promise(resolve => setTimeout(resolve, 5000));
 
@@ -74,23 +86,25 @@ app.post('/scan-url', async (req, res) => {
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
+    if (!harmful) {
+      return res.json({ النتيجة: 'نظيف' });
+    }
 
     const engines = resultData.data.attributes.results || {};
-    const التفاصيل = Object.entries(engines)
-      .filter(([_, val]) => val.result)
-      .map(([engine, val]) => ({
-        المحرك: engine,
-        النتيجة: translateTerm(val.result)
-      }));
+    const sortedResults = sortResults(Object.entries(engines).filter(([_, val]) => val.result));
+    const التفاصيل = sortedResults.slice(0, 10).map(([engine, val]) => ({
+      المحرك: engine,
+      النتيجة: translateTerm(val.result)
+    }));
 
     res.json({
-      النتيجة: harmful ? 'ضار' : 'نظيف',
-      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
+      النتيجة: 'ضار',
+      التفاصيل
     });
 
   } catch (e) {
     console.error("URL Error:", e);
-    res.json({ error: "حدث خطأ أثناء فحص الرابط. يرجى المحاولة لاحقاً." });
+    res.json({ error: "حدث خطأ أثناء فحص الرابط." });
   }
 });
 
@@ -108,7 +122,7 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
 
     const uploadData = await uploadResponse.json();
     const id = uploadData.data?.id;
-    if (!id) return res.json({ error: "فشل رفع الملف للتحليل. تأكد من صحة الملف." });
+    if (!id) return res.json({ error: "فشل رفع الملف للتحليل." });
 
     await new Promise(resolve => setTimeout(resolve, 5000));
 
@@ -122,25 +136,28 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
+    if (!harmful) {
+      fs.unlink(file.path, () => {});
+      return res.json({ النتيجة: 'نظيف' });
+    }
 
     const engines = resultData.data.attributes.results || {};
-    const التفاصيل = Object.entries(engines)
-      .filter(([_, val]) => val.result)
-      .map(([engine, val]) => ({
-        المحرك: engine,
-        النتيجة: translateTerm(val.result)
-      }));
+    const sortedResults = sortResults(Object.entries(engines).filter(([_, val]) => val.result));
+    const التفاصيل = sortedResults.slice(0, 10).map(([engine, val]) => ({
+      المحرك: engine,
+      النتيجة: translateTerm(val.result)
+    }));
 
     res.json({
-      النتيجة: harmful ? 'ضار' : 'نظيف',
-      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
+      النتيجة: 'ضار',
+      التفاصيل
     });
 
     fs.unlink(file.path, () => {});
 
   } catch (e) {
     console.error("File Error:", e);
-    res.json({ error: "حدث خطأ أثناء فحص الملف. يرجى المحاولة لاحقاً." });
+    res.json({ error: "حدث خطأ أثناء فحص الملف." });
   }
 });
 
