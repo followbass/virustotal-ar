@@ -13,7 +13,6 @@ const apiKey = process.env.VIRUSTOTAL_API_KEY;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
 const upload = multer({ dest: 'uploads/' });
 
 // قاموس الترجمة الموسّع
