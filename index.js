@@ -3,6 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const fs = require('fs');
 const fetch = require('node-fetch');
+const FormData = require('form-data');
 require('dotenv').config();
 
 const app = express();
@@ -29,9 +30,9 @@ app.post('/scan-url', async (req, res) => {
 
     const submitData = await submitResponse.json();
     const id = submitData.data?.id;
-    if (!id) return res.json({ error: "فشل إرسال الرابط للتحليل." });
+    if (!id) return res.json({ error: "فشل إرسال الرابط للتحليل. تحقق من صحة الرابط." });
 
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
       headers: { 'x-apikey': apiKey }
@@ -48,40 +49,39 @@ app.post('/scan-url', async (req, res) => {
     const التفاصيل = Object.entries(engines)
       .filter(([_, val]) => val.result)
       .slice(0, 6)
-      .map(([محرك, val]) => ({
-        المحرك,
+      .map(([engine, val]) => ({
+        المحرك: engine,
         النتيجة: val.result
       }));
 
     res.json({
       النتيجة: harmful ? 'ضار' : 'نظيف',
-      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات.'
+      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
     });
 
   } catch (e) {
     console.error("URL Error:", e);
-    res.json({ error: "حدث خطأ أثناء فحص الرابط." });
+    res.json({ error: "حدث خطأ أثناء فحص الرابط. يرجى المحاولة لاحقاً." });
   }
 });
 
 app.post('/scan-file', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
-    const fileStream = fs.createReadStream(file.path);
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(file.path));
 
     const uploadResponse = await fetch('https://www.virustotal.com/api/v3/files', {
       method: 'POST',
-      headers: {
-        'x-apikey': apiKey
-      },
-      body: fileStream
+      headers: { 'x-apikey': apiKey },
+      body: formData
     });
 
     const uploadData = await uploadResponse.json();
     const id = uploadData.data?.id;
-    if (!id) return res.json({ error: "فشل رفع الملف للتحليل." });
+    if (!id) return res.json({ error: "فشل رفع الملف للتحليل. تأكد من صحة الملف." });
 
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
       headers: { 'x-apikey': apiKey }
@@ -98,19 +98,21 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
     const التفاصيل = Object.entries(engines)
       .filter(([_, val]) => val.result)
       .slice(0, 6)
-      .map(([محرك, val]) => ({
-        المحرك,
+      .map(([engine, val]) => ({
+        المحرك: engine,
         النتيجة: val.result
       }));
 
     res.json({
       النتيجة: harmful ? 'ضار' : 'نظيف',
-      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات.'
+      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
     });
+
+    fs.unlink(file.path, () => {}); // حذف الملف بعد الفحص
 
   } catch (e) {
     console.error("File Error:", e);
-    res.json({ error: "حدث خطأ أثناء فحص الملف." });
+    res.json({ error: "حدث خطأ أثناء فحص الملف. يرجى المحاولة لاحقاً." });
   }
 });
 
