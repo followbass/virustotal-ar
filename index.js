@@ -47,14 +47,6 @@ function translateTerm(term) {
   return translationDictionary[lower] || term;
 }
 
-function extractSeverity(stats) {
-  const total = stats.malicious + stats.suspicious;
-  if (total >= 10) return 'خطير جداً';
-  if (total >= 5) return 'خطير';
-  if (total >= 1) return 'مريب';
-  return 'آمن';
-}
-
 app.post('/scan-url', async (req, res) => {
   const { url } = req.body;
   try {
@@ -83,19 +75,17 @@ app.post('/scan-url', async (req, res) => {
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
-    const severity = extractSeverity(stats);
 
     const engines = resultData.data.attributes.results || {};
     const التفاصيل = Object.entries(engines)
       .filter(([_, val]) => val.result)
-      .slice(0, 6)
       .map(([engine, val]) => ({
         المحرك: engine,
         النتيجة: translateTerm(val.result)
       }));
 
     res.json({
-      النتيجة: harmful ? `ضار - درجة الخطورة: ${severity}` : 'نظيف',
+      النتيجة: harmful ? 'ضار' : 'نظيف',
       التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
     });
 
@@ -133,19 +123,17 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
-    const severity = extractSeverity(stats);
 
     const engines = resultData.data.attributes.results || {};
     const التفاصيل = Object.entries(engines)
       .filter(([_, val]) => val.result)
-      .slice(0, 6)
       .map(([engine, val]) => ({
         المحرك: engine,
         النتيجة: translateTerm(val.result)
       }));
 
     res.json({
-      النتيجة: harmful ? `ضار - درجة الخطورة: ${severity}` : 'نظيف',
+      النتيجة: harmful ? 'ضار' : 'نظيف',
       التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
     });
 
