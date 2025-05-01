@@ -1,95 +1,81 @@
 const express = require("express");
+const fetch = require("node-fetch");
 const cors = require("cors");
 const multer = require("multer");
-const fetch = require("node-fetch");
+const fs = require("fs");
 require("dotenv").config();
 
 const app = express();
-const upload = multer();
+const upload = multer({ dest: "uploads/" });
+const PORT = process.env.PORT || 3000;
+const API_KEY = process.env.VIRUSTOTAL_API_KEY;
+const BASE_URL = "https://www.virustotal.com/api/v3";
+
+app.use(cors()); // بدون أي قيود
 app.use(express.json());
+app.use(express.static("public"));
 
-// التعامل الكامل مع CORS
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  next();
-});
-
-const VT_API_KEY = process.env.VT_API_KEY;
-
+// فحص الروابط
 app.post("/scan-url", async (req, res) => {
   const { url } = req.body;
-  if (!url) return res.status(400).json({ error: "الرابط مطلوب" });
-
   try {
-    const submitRes = await fetch("https://www.virustotal.com/api/v3/urls", {
+    const response = await fetch(`${BASE_URL}/urls`, {
       method: "POST",
       headers: {
-        "x-apikey": VT_API_KEY,
-        "content-type": "application/x-www-form-urlencoded",
+        "x-apikey": API_KEY,
+        "Content-Type": "application/x-www-form-urlencoded"
       },
-      body: `url=${encodeURIComponent(url)}`,
+      body: `url=${encodeURIComponent(url)}`
     });
-    const submitData = await submitRes.json();
-    const analysisId = submitData.data.id;
 
-    const resultRes = await fetch(
-      `https://www.virustotal.com/api/v3/analyses/${analysisId}`,
-      { headers: { "x-apikey": VT_API_KEY } }
-    );
-    const resultData = await resultRes.json();
-    const stats = resultData.data.attributes.stats;
+    const data = await response.json();
+    const id = data.data.id;
 
-    res.json({
-      "نتائج الفحص": {
-        "سليم": stats.harmless,
-        "مريب": stats.suspicious,
-        "ضار": stats.malicious,
-        "غير معروف": stats.undetected,
-      },
+    const result = await fetch(`${BASE_URL}/urls/${id}`, {
+      headers: { "x-apikey": API_KEY }
     });
-  } catch (err) {
+
+    const final = await result.json();
+    res.json(final);
+  } catch (error) {
+    console.error("URL scan error:", error);
     res.status(500).json({ error: "حدث خطأ أثناء الفحص." });
   }
 });
 
+// فحص الملفات
 app.post("/scan-file", upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "الملف مطلوب" });
+  const filePath = req.file.path;
 
   try {
-    const form = new FormData();
-    form.append("file", req.file.buffer, req.file.originalname);
+    const buffer = fs.readFileSync(filePath);
 
-    const scanRes = await fetch("https://www.virustotal.com/api/v3/files", {
+    const response = await fetch(`${BASE_URL}/files`, {
       method: "POST",
-      headers: { "x-apikey": VT_API_KEY },
-      body: form,
-    });
-
-    const scanData = await scanRes.json();
-    const analysisId = scanData.data.id;
-
-    const resultRes = await fetch(
-      `https://www.virustotal.com/api/v3/analyses/${analysisId}`,
-      { headers: { "x-apikey": VT_API_KEY } }
-    );
-    const resultData = await resultRes.json();
-    const stats = resultData.data.attributes.stats;
-
-    res.json({
-      "نتائج الفحص": {
-        "سليم": stats.harmless,
-        "مريب": stats.suspicious,
-        "ضار": stats.malicious,
-        "غير معروف": stats.undetected,
+      headers: {
+        "x-apikey": API_KEY,
+        "Content-Type": "application/octet-stream"
       },
+      body: buffer
     });
-  } catch (err) {
+
+    const data = await response.json();
+    const id = data.data.id;
+
+    const result = await fetch(`${BASE_URL}/files/${id}`, {
+      headers: { "x-apikey": API_KEY }
+    });
+
+    const final = await result.json();
+    res.json(final);
+  } catch (error) {
+    console.error("File scan error:", error);
     res.status(500).json({ error: "حدث خطأ أثناء فحص الملف." });
+  } finally {
+    fs.unlinkSync(filePath); // حذف الملف المؤقت
   }
 });
 
-app.listen(process.env.PORT || 3000, () =>
-  console.log("الخادم يعمل بنجاح")
-);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
