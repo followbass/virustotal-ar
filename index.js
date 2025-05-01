@@ -1,104 +1,123 @@
-const express = require("express");
-const fetch = require("node-fetch");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-require("dotenv").config();
+const express = require('express');
+const multer = require('multer');
+const cors = require('cors');
+const fs = require('fs');
+const fetch = require('node-fetch');
+require('dotenv').config();
 
 const app = express();
-const upload = multer({ dest: "uploads/" });
-const PORT = process.env.PORT || 3000;
-const API_KEY = process.env.VIRUSTOTAL_API_KEY;
-const BASE_URL = "https://www.virustotal.com/api/v3";
+const port = process.env.PORT || 10000;
+const apiKey = process.env.VIRUSTOTAL_API_KEY;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public"));
+app.use(express.urlencoded({ extended: true }));
 
-// دالة لتحليل النتائج واستخراج أهم 6 محركات كشفت التهديد
-function getArabicSummary(data) {
-  const engines = data.data.attributes.last_analysis_results;
-  const detected = Object.entries(engines)
-    .filter(([_, result]) => result.category === "malicious")
-    .slice(0, 6)
-    .map(([engine, result]) => ({
-      المحرك: engine,
-      النتيجة: result.result
-    }));
+const upload = multer({ dest: 'uploads/' });
 
-  if (detected.length === 0) {
-    return { النتيجة: "آمن", التفاصيل: [] };
-  } else {
-    return { النتيجة: "ضار", التفاصيل: detected };
-  }
-}
-
-// فحص الروابط
-app.post("/scan-url", async (req, res) => {
+app.post('/scan-url', async (req, res) => {
   const { url } = req.body;
-
   try {
-    const submitResponse = await fetch(`${BASE_URL}/urls`, {
-      method: "POST",
+    const submitResponse = await fetch('https://www.virustotal.com/api/v3/urls', {
+      method: 'POST',
       headers: {
-        "x-apikey": API_KEY,
-        "Content-Type": "application/x-www-form-urlencoded"
+        'x-apikey': apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
       body: `url=${encodeURIComponent(url)}`
     });
 
     const submitData = await submitResponse.json();
-    const urlId = submitData.data.id.replace(/^.*-/, ""); // تصحيح معرف URL
+    const id = submitData.data?.id;
+    if (!id) return res.json({ error: "فشل إرسال الرابط للتحليل." });
 
-    const result = await fetch(`${BASE_URL}/urls/${urlId}`, {
-      headers: { "x-apikey": API_KEY }
+    await new Promise(resolve => setTimeout(resolve, 4000));
+
+    const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
+      headers: { 'x-apikey': apiKey }
     });
 
-    const final = await result.json();
-    const summary = getArabicSummary(final);
-    res.json(summary);
-  } catch (error) {
-    console.error("خطأ في فحص الرابط:", error.message);
-    res.status(500).json({ error: "حدث خطأ أثناء الفحص." });
+    const resultData = await resultResponse.json();
+    const stats = resultData.data?.attributes?.stats;
+
+    if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
+
+    const harmful = stats.malicious + stats.suspicious > 0;
+    const engines = resultData.data.attributes.results || {};
+
+    const التفاصيل = Object.entries(engines)
+      .filter(([_, val]) => val.result)
+      .slice(0, 6)
+      .map(([محرك, val]) => ({
+        المحرك,
+        النتيجة: val.result
+      }));
+
+    res.json({
+      النتيجة: harmful ? 'ضار' : 'نظيف',
+      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات.'
+    });
+
+  } catch (e) {
+    console.error("URL Error:", e);
+    res.json({ error: "حدث خطأ أثناء فحص الرابط." });
   }
 });
 
-// فحص الملفات
-app.post("/scan-file", upload.single("file"), async (req, res) => {
-  const filePath = req.file.path;
-
+app.post('/scan-file', upload.single('file'), async (req, res) => {
   try {
-    const buffer = fs.readFileSync(filePath);
+    const file = req.file;
+    const fileStream = fs.createReadStream(file.path);
 
-    const response = await fetch(`${BASE_URL}/files`, {
-      method: "POST",
+    const uploadResponse = await fetch('https://www.virustotal.com/api/v3/files', {
+      method: 'POST',
       headers: {
-        "x-apikey": API_KEY
+        'x-apikey': apiKey
       },
-      body: buffer
+      body: fileStream
     });
 
-    const data = await response.json();
-    const id = data.data.id;
+    const uploadData = await uploadResponse.json();
+    const id = uploadData.data?.id;
+    if (!id) return res.json({ error: "فشل رفع الملف للتحليل." });
 
-    // الانتظار 5 ثوانٍ لضمان جاهزية التحليل
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 4000));
 
-    const result = await fetch(`${BASE_URL}/files/${id}`, {
-      headers: { "x-apikey": API_KEY }
+    const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
+      headers: { 'x-apikey': apiKey }
     });
 
-    const final = await result.json();
-    const summary = getArabicSummary(final);
-    res.json(summary);
-  } catch (error) {
-    console.error("خطأ في فحص الملف:", error.message);
-    res.status(500).json({ error: "حدث خطأ أثناء فحص الملف." });
-  } finally {
-    fs.unlinkSync(filePath);
+    const resultData = await resultResponse.json();
+    const stats = resultData.data?.attributes?.stats;
+
+    if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
+
+    const harmful = stats.malicious + stats.suspicious > 0;
+    const engines = resultData.data.attributes.results || {};
+
+    const التفاصيل = Object.entries(engines)
+      .filter(([_, val]) => val.result)
+      .slice(0, 6)
+      .map(([محرك, val]) => ({
+        المحرك,
+        النتيجة: val.result
+      }));
+
+    res.json({
+      النتيجة: harmful ? 'ضار' : 'نظيف',
+      التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات.'
+    });
+
+  } catch (e) {
+    console.error("File Error:", e);
+    res.json({ error: "حدث خطأ أثناء فحص الملف." });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.get('/', (req, res) => {
+  res.send('خدمة فحص الروابط والملفات تعمل بنجاح.');
+});
+
+app.listen(port, () => {
+  console.log(`الخادم يعمل على المنفذ ${port}`);
 });
