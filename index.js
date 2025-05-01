@@ -6,9 +6,9 @@ app.use(cors()); app.use(express.json()); app.use(express.urlencoded({ extended:
 
 const upload = multer({ dest: 'uploads/' });
 
-const translationMap = { "clean": "نظيف", "malware": "برمجيات خبيثة", "phishing": "تصيد", "suspicious": "مشبوه", "trojan": "حصان طروادة", "worm": "دودة", "ransomware": "فدية", "backdoor": "باب خلفي", "spyware": "برنامج تجسس", "adware": "برنامج إعلاني", "unknown": "غير معروف", "riskware": "برنامج خطير", "unrated": "غير مصنف", "harmless": "غير ضار", "dangerous": "خطير", "unwanted": "غير مرغوب فيه", "possible threat": "تهديد محتمل" };
+// قاموس الترجمة const ترجمة_النتائج = { "malware": "برمجية خبيثة", "trojan": "حصان طروادة", "worm": "دودة", "spyware": "برنامج تجسس", "adware": "برنامج إعلاني", "ransomware": "برنامج فدية", "phishing": "تصيد", "clean": "نظيف", "undetected": "غير مكتشف", "suspicious": "مشبوه", "harmless": "غير ضار", "malicious": "ضار" };
 
-function translateResult(result) { if (!result) return "غير معروف"; const lower = result.toLowerCase(); return translationMap[lower] || result; }
+function ترجم_النتيجة(result) { if (!result) return "غير معروف"; return ترجمة_النتائج[result.toLowerCase()] || result; }
 
 app.post('/scan-url', async (req, res) => { const { url } = req.body; try { const submitResponse = await fetch('https://www.virustotal.com/api/v3/urls', { method: 'POST', headers: { 'x-apikey': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' }, body: url=${encodeURIComponent(url)} });
 
@@ -24,6 +24,7 @@ const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/$
 
 const resultData = await resultResponse.json();
 const stats = resultData.data?.attributes?.stats;
+
 if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
 const harmful = stats.malicious + stats.suspicious > 0;
@@ -34,7 +35,7 @@ const التفاصيل = Object.entries(engines)
   .slice(0, 6)
   .map(([engine, val]) => ({
     المحرك: engine,
-    النتيجة: translateResult(val.result)
+    النتيجة: ترجم_النتيجة(val.result)
   }));
 
 res.json({
@@ -64,6 +65,7 @@ const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/$
 
 const resultData = await resultResponse.json();
 const stats = resultData.data?.attributes?.stats;
+
 if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
 const harmful = stats.malicious + stats.suspicious > 0;
@@ -74,7 +76,7 @@ const التفاصيل = Object.entries(engines)
   .slice(0, 6)
   .map(([engine, val]) => ({
     المحرك: engine,
-    النتيجة: translateResult(val.result)
+    النتيجة: ترجم_النتيجة(val.result)
   }));
 
 res.json({
@@ -82,7 +84,7 @@ res.json({
   التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
 });
 
-fs.unlink(file.path, () => {});
+fs.unlink(file.path, () => {}); // حذف الملف بعد الفحص
 
 } catch (e) { console.error("File Error:", e); res.json({ error: "حدث خطأ أثناء فحص الملف. يرجى المحاولة لاحقاً." }); } });
 
