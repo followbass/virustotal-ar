@@ -16,29 +16,43 @@ app.use(express.urlencoded({ extended: true }));
 
 const upload = multer({ dest: 'uploads/' });
 
-// قاموس الترجمة
+// قاموس الترجمة الموسّع
 const translationDictionary = {
-  'malware': 'برمجية خبيثة',
-  'trojan': 'حصان طروادة',
-  'worm': 'دودة',
-  'adware': 'برنامج إعلاني',
-  'spyware': 'برنامج تجسس',
-  'riskware': 'برنامج خطير',
-  'phishing': 'تصيّد',
-  'backdoor': 'باب خلفي',
-  'ransomware': 'برنامج فدية',
+  'malware': 'برمجية خبيثة (Malware)',
+  'trojan': 'حصان طروادة (Trojan)',
+  'worm': 'دودة (Worm)',
+  'adware': 'برنامج إعلاني (Adware)',
+  'spyware': 'برنامج تجسس (Spyware)',
+  'riskware': 'برنامج خطر (Riskware)',
+  'phishing': 'تصيّد (Phishing)',
+  'backdoor': 'باب خلفي (Backdoor)',
+  'ransomware': 'برنامج فدية (Ransomware)',
   'clean': 'نظيف',
   'undetected': 'غير مكتشف',
   'suspicious': 'مريب',
   'malicious': 'ضار',
   'timeout': 'انتهت المهلة',
-  'harmless': 'غير ضار'
+  'harmless': 'غير ضار',
+  'type-unsupported': 'نوع غير مدعوم',
+  'failure': 'فشل في الفحص',
+  'confirmed-timeout': 'انتهت المهلة المؤكدة',
+  'no-result': 'لا توجد نتيجة',
+  'false-positive': 'إيجابية زائفة',
+  'potentially-unwanted': 'برنامج غير مرغوب فيه'
 };
 
 function translateTerm(term) {
   if (!term || typeof term !== 'string') return term;
   const lower = term.toLowerCase();
   return translationDictionary[lower] || term;
+}
+
+function extractSeverity(stats) {
+  const total = stats.malicious + stats.suspicious;
+  if (total >= 10) return 'خطير جداً';
+  if (total >= 5) return 'خطير';
+  if (total >= 1) return 'مريب';
+  return 'آمن';
 }
 
 app.post('/scan-url', async (req, res) => {
@@ -69,8 +83,9 @@ app.post('/scan-url', async (req, res) => {
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
-    const engines = resultData.data.attributes.results || {};
+    const severity = extractSeverity(stats);
 
+    const engines = resultData.data.attributes.results || {};
     const التفاصيل = Object.entries(engines)
       .filter(([_, val]) => val.result)
       .slice(0, 6)
@@ -80,7 +95,7 @@ app.post('/scan-url', async (req, res) => {
       }));
 
     res.json({
-      النتيجة: harmful ? 'ضار' : 'نظيف',
+      النتيجة: harmful ? `ضار - درجة الخطورة: ${severity}` : 'نظيف',
       التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
     });
 
@@ -118,8 +133,9 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
-    const engines = resultData.data.attributes.results || {};
+    const severity = extractSeverity(stats);
 
+    const engines = resultData.data.attributes.results || {};
     const التفاصيل = Object.entries(engines)
       .filter(([_, val]) => val.result)
       .slice(0, 6)
@@ -129,11 +145,11 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
       }));
 
     res.json({
-      النتيجة: harmful ? 'ضار' : 'نظيف',
+      النتيجة: harmful ? `ضار - درجة الخطورة: ${severity}` : 'نظيف',
       التفاصيل: التفاصيل.length > 0 ? التفاصيل : 'لم يتم الكشف عن تهديدات بواسطة المحركات الأساسية.'
     });
 
-    fs.unlink(file.path, () => {}); // حذف الملف بعد الفحص
+    fs.unlink(file.path, () => {});
 
   } catch (e) {
     console.error("File Error:", e);
