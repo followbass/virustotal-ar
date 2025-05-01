@@ -6,8 +6,15 @@ require("dotenv").config();
 
 const app = express();
 const upload = multer();
-app.use(cors());
 app.use(express.json());
+
+// التعامل الكامل مع CORS
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
 
 const VT_API_KEY = process.env.VT_API_KEY;
 
@@ -32,8 +39,8 @@ app.post("/scan-url", async (req, res) => {
       { headers: { "x-apikey": VT_API_KEY } }
     );
     const resultData = await resultRes.json();
-
     const stats = resultData.data.attributes.stats;
+
     res.json({
       "نتائج الفحص": {
         "سليم": stats.harmless,
@@ -68,8 +75,8 @@ app.post("/scan-file", upload.single("file"), async (req, res) => {
       { headers: { "x-apikey": VT_API_KEY } }
     );
     const resultData = await resultRes.json();
-
     const stats = resultData.data.attributes.stats;
+
     res.json({
       "نتائج الفحص": {
         "سليم": stats.harmless,
