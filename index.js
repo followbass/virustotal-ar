@@ -15,6 +15,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 const upload = multer({ dest: 'uploads/' });
 
+// ترجمة المصطلحات
 const translationDictionary = {
   'malware': 'برمجية خبيثة (Malware)',
   'trojan': 'حصان طروادة (Trojan)',
@@ -45,19 +46,21 @@ function translateTerm(term) {
   return translationDictionary[lower] || term;
 }
 
-function isHarmful(term) {
-  const harmfulTerms = ['malicious', 'phishing', 'malware', 'trojan', 'spyware', 'backdoor', 'worm', 'ransomware'];
-  return harmfulTerms.includes(term.toLowerCase());
+function isThreat(term) {
+  const threatIndicators = ['malicious', 'phishing', 'malware', 'trojan', 'spyware', 'backdoor', 'worm', 'ransomware', 'suspicious', 'riskware', 'potentially-unwanted'];
+  return threatIndicators.includes(term.toLowerCase());
 }
 
-function sortResults(entries) {
-  return entries.sort((a, b) => {
-    const harmfulA = isHarmful(a.result || '');
-    const harmfulB = isHarmful(b.result || '');
-    return harmfulA === harmfulB ? 0 : harmfulB - harmfulA;
-  });
+function extractThreats(results) {
+  return Object.entries(results)
+    .filter(([_, val]) => val.result && isThreat(val.result))
+    .map(([engine, val]) => ({
+      المحرك: engine,
+      النتيجة: translateTerm(val.result)
+    }));
 }
 
+// فحص الروابط
 app.post('/scan-url', async (req, res) => {
   const { url } = req.body;
   try {
@@ -82,24 +85,21 @@ app.post('/scan-url', async (req, res) => {
 
     const resultData = await resultResponse.json();
     const stats = resultData.data?.attributes?.stats;
+    const engines = resultData.data?.attributes?.results || {};
 
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
+
     if (!harmful) {
       return res.json({ النتيجة: 'نظيف' });
     }
 
-    const engines = resultData.data.attributes.results || {};
-    const sortedResults = sortResults(Object.entries(engines).filter(([_, val]) => val.result));
-    const التفاصيل = sortedResults.slice(0, 10).map(([engine, val]) => ({
-      المحرك: engine,
-      النتيجة: translateTerm(val.result)
-    }));
+    const التهديدات = extractThreats(engines);
 
     res.json({
       النتيجة: 'ضار',
-      التفاصيل
+      التفاصيل: التهديدات.length > 0 ? التهديدات : 'تم الكشف عن ضرر لكن بدون تفاصيل محددة.'
     });
 
   } catch (e) {
@@ -108,6 +108,7 @@ app.post('/scan-url', async (req, res) => {
   }
 });
 
+// فحص الملفات
 app.post('/scan-file', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
@@ -132,29 +133,25 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
 
     const resultData = await resultResponse.json();
     const stats = resultData.data?.attributes?.stats;
+    const engines = resultData.data?.attributes?.results || {};
 
     if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
 
     const harmful = stats.malicious + stats.suspicious > 0;
+
     if (!harmful) {
       fs.unlink(file.path, () => {});
       return res.json({ النتيجة: 'نظيف' });
     }
 
-    const engines = resultData.data.attributes.results || {};
-    const sortedResults = sortResults(Object.entries(engines).filter(([_, val]) => val.result));
-    const التفاصيل = sortedResults.slice(0, 10).map(([engine, val]) => ({
-      المحرك: engine,
-      النتيجة: translateTerm(val.result)
-    }));
+    const التهديدات = extractThreats(engines);
 
     res.json({
       النتيجة: 'ضار',
-      التفاصيل
+      التفاصيل: التهديدات.length > 0 ? التهديدات : 'تم الكشف عن ضرر لكن بدون تفاصيل محددة.'
     });
 
     fs.unlink(file.path, () => {});
-
   } catch (e) {
     console.error("File Error:", e);
     res.json({ error: "حدث خطأ أثناء فحص الملف." });
