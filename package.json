@@ -1,7 +1,7 @@
 {
-  "name": "virustotal-api-server",
+  "name": "virustotal-api",
   "version": "1.0.0",
-  "description": "Simple VirusTotal Proxy API for Blogger",
+  "description": "API proxy to use VirusTotal from Blogger",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
