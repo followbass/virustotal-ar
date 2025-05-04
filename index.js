@@ -15,7 +15,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 const upload = multer({ dest: 'uploads/' });
 
-// ترجمة المصطلحات
+// الترجمة
 const translationDictionary = {
   'malware': 'برمجية خبيثة (Malware)',
   'trojan': 'حصان طروادة (Trojan)',
@@ -60,9 +60,35 @@ function extractThreats(results) {
     }));
 }
 
+// استرجاع نتائج التحليل مع إعادة المحاولة البسيطة
+async function getAnalysisWithRetry(id) {
+  const fetchResult = async () => {
+    const res = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
+      headers: { 'x-apikey': apiKey }
+    });
+    return res.json();
+  };
+
+  let resultData = await fetchResult();
+  let stats = resultData?.data?.attributes?.stats;
+
+  if (!stats) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    resultData = await fetchResult();
+    stats = resultData?.data?.attributes?.stats;
+  }
+
+  return stats ? resultData : null;
+}
+
 // فحص الروابط
 app.post('/scan-url', async (req, res) => {
   const { url } = req.body;
+
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: "يرجى إدخال رابط صالح." });
+  }
+
   try {
     const submitResponse = await fetch('https://www.virustotal.com/api/v3/urls', {
       method: 'POST',
@@ -75,36 +101,35 @@ app.post('/scan-url', async (req, res) => {
 
     const submitData = await submitResponse.json();
     const id = submitData.data?.id;
-    if (!id) return res.json({ error: "فشل إرسال الرابط للتحليل." });
+
+    if (!id) {
+      return res.status(503).json({ error: "فشل إرسال الرابط للتحليل." });
+    }
 
     await new Promise(resolve => setTimeout(resolve, 5000));
+    const resultData = await getAnalysisWithRetry(id);
 
-    const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
-      headers: { 'x-apikey': apiKey }
-    });
+    if (!resultData) {
+      return res.status(504).json({ error: "انتهت المهلة في انتظار نتائج الفحص." });
+    }
 
-    const resultData = await resultResponse.json();
-    const stats = resultData.data?.attributes?.stats;
-    const engines = resultData.data?.attributes?.results || {};
-
-    if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
-
+    const stats = resultData.data.attributes.stats;
+    const engines = resultData.data.attributes.results || {};
     const harmful = stats.malicious + stats.suspicious > 0;
 
     if (!harmful) {
-      return res.json({ النتيجة: 'نظيف' });
+      return res.status(200).json({ النتيجة: 'نظيف' });
     }
 
     const التهديدات = extractThreats(engines);
-
-    res.json({
+    return res.status(200).json({
       النتيجة: 'ضار',
       التفاصيل: التهديدات.length > 0 ? التهديدات : 'تم الكشف عن ضرر لكن بدون تفاصيل محددة.'
     });
 
   } catch (e) {
     console.error("URL Error:", e);
-    res.json({ error: "حدث خطأ أثناء فحص الرابط." });
+    return res.status(500).json({ error: "حدث خطأ أثناء فحص الرابط." });
   }
 });
 
@@ -112,6 +137,10 @@ app.post('/scan-url', async (req, res) => {
 app.post('/scan-file', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "يرجى رفع ملف صالح." });
+    }
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(file.path));
 
@@ -123,38 +152,38 @@ app.post('/scan-file', upload.single('file'), async (req, res) => {
 
     const uploadData = await uploadResponse.json();
     const id = uploadData.data?.id;
-    if (!id) return res.json({ error: "فشل رفع الملف للتحليل." });
+
+    if (!id) {
+      fs.unlink(file.path, () => {});
+      return res.status(503).json({ error: "فشل رفع الملف للتحليل." });
+    }
 
     await new Promise(resolve => setTimeout(resolve, 5000));
+    const resultData = await getAnalysisWithRetry(id);
 
-    const resultResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${id}`, {
-      headers: { 'x-apikey': apiKey }
-    });
+    fs.unlink(file.path, () => {});
 
-    const resultData = await resultResponse.json();
-    const stats = resultData.data?.attributes?.stats;
-    const engines = resultData.data?.attributes?.results || {};
+    if (!resultData) {
+      return res.status(504).json({ error: "انتهت المهلة في انتظار نتائج الفحص." });
+    }
 
-    if (!stats) return res.json({ error: "فشل الحصول على نتيجة الفحص." });
-
+    const stats = resultData.data.attributes.stats;
+    const engines = resultData.data.attributes.results || {};
     const harmful = stats.malicious + stats.suspicious > 0;
 
     if (!harmful) {
-      fs.unlink(file.path, () => {});
-      return res.json({ النتيجة: 'نظيف' });
+      return res.status(200).json({ النتيجة: 'نظيف' });
     }
 
     const التهديدات = extractThreats(engines);
-
-    res.json({
+    return res.status(200).json({
       النتيجة: 'ضار',
       التفاصيل: التهديدات.length > 0 ? التهديدات : 'تم الكشف عن ضرر لكن بدون تفاصيل محددة.'
     });
 
-    fs.unlink(file.path, () => {});
   } catch (e) {
     console.error("File Error:", e);
-    res.json({ error: "حدث خطأ أثناء فحص الملف." });
+    return res.status(500).json({ error: "حدث خطأ أثناء فحص الملف." });
   }
 });
 
